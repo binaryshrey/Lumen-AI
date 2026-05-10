@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Play, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -27,216 +27,151 @@ import {
   type AgentStatus,
   type Workflow,
 } from "@/lib/workflow-types"
+import { createWorkflow, getWorkflow } from "@/lib/api"
+import { supabase } from "@/lib/supabase"
 
-function hydrateNode(n: (typeof PIPELINE_NODES)[number]): AgentNodeData {
+// ── Transform backend order → frontend Workflow ─────────────────────────────
+
+type NodeTemplate = (typeof PIPELINE_NODES)[number]
+
+function applyNodeState(
+  template: NodeTemplate | Omit<AgentNodeData, "status" | "duration">,
+  nodeStates: Record<string, Record<string, unknown>>,
+): AgentNodeData {
+  const state = nodeStates[template.id] || {}
   return {
-    ...n,
-    status: "idle" as AgentStatus,
-    duration: 0,
-    children: n.children?.map((c) => ({
-      ...c,
-      status: "idle" as AgentStatus,
-      duration: 0,
-    })),
+    ...template,
+    status: (state.status as AgentStatus) || "idle",
+    duration: (state.duration as number) || 0,
+    outputPreview:
+      (state.outputPreview as string) || template.outputPreview,
+    metric:
+      (state.metric as { label: string; value: string }) || template.metric,
+    children: ("children" in template && template.children)
+      ? template.children.map((child) => applyNodeState(child, nodeStates))
+      : undefined,
   }
 }
 
-function createWorkflow(description: string, targetMinutes: number): Workflow {
+function orderToWorkflow(order: Record<string, unknown>): Workflow {
+  const nodeStates = (order.node_states as Record<string, Record<string, unknown>>) || {}
+
+  const nodes = PIPELINE_NODES.map((t) => applyNodeState(t, nodeStates))
+
+  let currentNodeIndex = -1
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i]
+    if (n.status === "running") {
+      currentNodeIndex = i
+      break
+    }
+    if (n.children?.some((c) => c.status === "running")) {
+      currentNodeIndex = i
+      break
+    }
+  }
+
   return {
-    id: crypto.randomUUID(),
-    description,
-    targetMinutes,
-    status: "idle",
-    nodes: PIPELINE_NODES.map(hydrateNode),
-    currentNodeIndex: -1,
-    createdAt: Date.now(),
+    id: order.id as string,
+    description: order.description as string,
+    targetMinutes: order.target_minutes as number,
+    status: (order.status as AgentStatus) || "idle",
+    nodes,
+    currentNodeIndex,
+    createdAt: new Date(order.created_at as string).getTime(),
   }
 }
 
-// ── Simulation data ─────────────────────────────────────────────────────────
-
-type SimStep = {
-  duration: number
-  preview: string
-  metric: { label: string; value: string }
-}
-
-// Flat nodes: order-parsing, ingest, search-index, deliver
-const FLAT_SIM: Record<string, SimStep> = {
-  "order-parsing": {
-    duration: 1.8,
-    preview: 'Parsed 6 keywords: ["outdoor", "cooking", "daytime", "natural", "food", "campfire"]. Thresholds set: aesthetic >= 0.6, semantic >= 0.5.',
-    metric: { label: "TOKENS", value: "842" },
-  },
-  ingest: {
-    duration: 3.2,
-    preview: "Fetched 48 clips from Pexels (3 pages). Decoded 312 frames. 2 duplicates filtered by Bloom filter.",
-    metric: { label: "CLIPS", value: "48" },
-  },
-  "search-index": {
-    duration: 2.8,
-    preview: "Generated 39 CLIP embeddings (768-dim). FAISS index built (M=32). 39 rows in DuckDB. 39 captions indexed.",
-    metric: { label: "INDEXED", value: "39" },
-  },
-  deliver: {
-    duration: 1.5,
-    preview: "Packaged 39 clips (12.4 min total). Manifest ready. Avg aesthetic: 0.74, avg semantic: 0.68.",
-    metric: { label: "DURATION", value: "12.4 min" },
-  },
-}
-
-// ML Filters children
-const CHILDREN_SIM: Record<string, SimStep> = {
-  "ml-hard-gates": {
-    duration: 1.2,
-    preview: "Sharpness gate: 7 clips rejected (Laplacian < 0.1). Safety gate: all passed. 41/48 clips forwarded.",
-    metric: { label: "REJECTED", value: "7" },
-  },
-  "ml-quality-scoring": {
-    duration: 2.5,
-    preview: "Scored 41 clips: avg aesthetic 0.71, avg semantic 0.64, avg motion 0.48. Captions generated for all clips.",
-    metric: { label: "AVG SCORE", value: "0.68" },
-  },
-  "ml-decision": {
-    duration: 0.8,
-    preview: "Accept: 39 clips (> 0.55). Margin: 5 clips (0.35–0.55) → QA queue. Reject: 4 clips (< 0.35). Rate: 81.3%.",
-    metric: { label: "ACCEPT RATE", value: "81.3%" },
-  },
-}
-
-async function simulateNode(
-  duration: number,
-  onTick: (elapsed: number) => void,
-) {
-  const steps = 10
-  const stepTime = (duration / steps) * 1000
-  for (let s = 1; s <= steps; s++) {
-    await new Promise((r) => setTimeout(r, stepTime))
-    onTick((duration / steps) * s)
-  }
-}
+// ── Page ────────────────────────────────────────────────────────────────────
 
 export default function Page() {
   const [open, setOpen] = useState(false)
   const [description, setDescription] = useState("")
   const [duration, setDuration] = useState("")
   const [workflow, setWorkflow] = useState<Workflow | null>(null)
-  const runningRef = useRef(false)
+  const [loading, setLoading] = useState(false)
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const workflowIdRef = useRef<string | null>(null)
 
-  const updateNode = (
-    wf: Workflow,
-    nodeIndex: number,
-    patch: Partial<AgentNodeData>,
-  ): Workflow => ({
-    ...wf,
-    nodes: wf.nodes.map((n, idx) =>
-      idx === nodeIndex ? { ...n, ...patch } : n,
-    ),
-  })
+  // Subscribe to Supabase Realtime + polling fallback
+  const subscribe = useCallback((orderId: string) => {
+    workflowIdRef.current = orderId
 
-  const updateChild = (
-    wf: Workflow,
-    nodeIndex: number,
-    childIndex: number,
-    patch: Partial<AgentNodeData>,
-  ): Workflow => ({
-    ...wf,
-    nodes: wf.nodes.map((n, idx) =>
-      idx === nodeIndex
-        ? {
-            ...n,
-            children: n.children?.map((c, ci) =>
-              ci === childIndex ? { ...c, ...patch } : c,
-            ),
-          }
-        : n,
-    ),
-  })
+    // Update URL
+    window.history.replaceState(null, "", `/workflows/${orderId}`)
 
-  const runPipeline = useCallback(async (wf: Workflow) => {
-    if (runningRef.current) return
-    runningRef.current = true
-
-    let current: Workflow = { ...wf, status: "running", currentNodeIndex: 0 }
-
-    for (let i = 0; i < current.nodes.length; i++) {
-      const node = current.nodes[i]
-      current = { ...current, currentNodeIndex: i }
-
-      if (node.children && node.children.length > 0) {
-        // Run children sequentially
-        current = updateNode(current, i, { status: "running" })
-        setWorkflow({ ...current })
-
-        for (let ci = 0; ci < node.children.length; ci++) {
-          const child = node.children[ci]
-          const sim = CHILDREN_SIM[child.id]
-          if (!sim) continue
-
-          current = updateChild(current, i, ci, { status: "running" })
-          setWorkflow({ ...current })
-
-          await simulateNode(sim.duration, (elapsed) => {
-            current = updateChild(current, i, ci, { duration: elapsed })
-            setWorkflow({ ...current })
-          })
-
-          current = updateChild(current, i, ci, {
-            status: "completed",
-            duration: sim.duration,
-            outputPreview: sim.preview,
-            metric: sim.metric,
-          })
-          setWorkflow({ ...current })
-        }
-
-        // Mark parent completed with summary
-        current = updateNode(current, i, {
-          status: "completed",
-          duration: node.children.reduce(
-            (sum, c) => sum + (CHILDREN_SIM[c.id]?.duration ?? 0),
-            0,
-          ),
-          outputPreview:
-            "All filters complete. 39 accepted, 5 margin, 4 rejected.",
-          metric: { label: "ACCEPT RATE", value: "81.3%" },
-        })
-        setWorkflow({ ...current })
-      } else {
-        // Flat node
-        const sim = FLAT_SIM[node.id]
-        if (!sim) continue
-
-        current = updateNode(current, i, { status: "running" })
-        setWorkflow({ ...current })
-
-        await simulateNode(sim.duration, (elapsed) => {
-          current = updateNode(current, i, { duration: elapsed })
-          setWorkflow({ ...current })
-        })
-
-        current = updateNode(current, i, {
-          status: "completed",
-          duration: sim.duration,
-          outputPreview: sim.preview,
-          metric: sim.metric,
-        })
-        setWorkflow({ ...current })
-      }
+    // Clean up previous subscription
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current)
+    }
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
     }
 
-    current = { ...current, status: "completed" }
-    setWorkflow({ ...current })
-    runningRef.current = false
+    // Realtime subscription
+    const channel = supabase
+      .channel(`order-${orderId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "orders",
+          filter: `id=eq.${orderId}`,
+        },
+        (payload) => {
+          const order = payload.new
+          setWorkflow(orderToWorkflow(order))
+        },
+      )
+      .subscribe()
+
+    channelRef.current = channel
+
+    // Polling fallback (every 3s) in case Realtime is slow
+    pollRef.current = setInterval(async () => {
+      try {
+        const order = await getWorkflow(orderId)
+        setWorkflow(orderToWorkflow(order))
+
+        // Stop polling when completed or errored
+        if (order.status === "completed" || order.status === "error") {
+          if (pollRef.current) clearInterval(pollRef.current)
+        }
+      } catch {
+        // ignore poll errors
+      }
+    }, 3000)
   }, [])
 
-  const handleCreate = () => {
-    const wf = createWorkflow(description, parseInt(duration))
-    setWorkflow(wf)
-    setOpen(false)
-    setDescription("")
-    setDuration("")
-    runPipeline(wf)
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current)
+      }
+      if (pollRef.current) {
+        clearInterval(pollRef.current)
+      }
+    }
+  }, [])
+
+  const handleCreate = async () => {
+    setLoading(true)
+    try {
+      const order = await createWorkflow(description, parseInt(duration))
+      const wf = orderToWorkflow(order)
+      setWorkflow(wf)
+      subscribe(order.id)
+      setOpen(false)
+      setDescription("")
+      setDuration("")
+    } catch (e) {
+      console.error("Failed to create workflow:", e)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -291,11 +226,11 @@ export default function Page() {
               </div>
               <Button
                 className="w-full gap-2"
-                disabled={!description.trim() || !duration}
+                disabled={!description.trim() || !duration || loading}
                 onClick={handleCreate}
               >
                 <Play className="size-4 fill-current" />
-                Begin Workflow
+                {loading ? "Creating..." : "Begin Workflow"}
               </Button>
             </div>
           </DialogContent>

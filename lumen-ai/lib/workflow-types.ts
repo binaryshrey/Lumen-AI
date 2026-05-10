@@ -44,7 +44,7 @@ export const PIPELINE_NODES: NodeTemplate[] = [
     tag: "LLM Parser",
     tagColor: "amber",
     title: "Order Parsing",
-    subtitle: "Sonnet 4.6 — Prompt Interpreter",
+    subtitle: "Gemini Flash — Prompt Interpreter",
     icon: "brain",
     outputLabel: "PARSED SPEC",
     outputPreview: "Extracting keywords, thresholds, and filter configuration from prompt...",
@@ -53,9 +53,9 @@ export const PIPELINE_NODES: NodeTemplate[] = [
       tabs: ["Overview", "Config", "Output"],
       overview: {
         description:
-          "Parses the user's natural language dataset request into a structured specification using Claude Sonnet 4.6. Derives Pexels search keywords and sets filter thresholds based on qualitative intent.",
+          "Parses the user's natural language dataset request into a structured specification using Gemini Flash via Vertex AI. Derives Pexels search keywords and sets filter thresholds based on qualitative intent.",
         inputs: [
-          { label: "Model", value: "claude-sonnet-4-6-20250514" },
+          { label: "Model", value: "Gemini 3 Flash (Vertex AI)" },
           { label: "Temperature", value: "0" },
           { label: "Max Tokens", value: "1024" },
         ],
@@ -120,28 +120,33 @@ export const PIPELINE_NODES: NodeTemplate[] = [
         tag: "Hard Gate",
         tagColor: "amber",
         title: "Hard Gates",
-        subtitle: "Sharpness + Safety Check",
+        subtitle: "Cloud Vision + OpenCV",
         icon: "shield",
         outputLabel: "GATED",
-        outputPreview: "Rejecting blurry frames (Laplacian < 0.1) and unsafe content before scoring...",
+        outputPreview: "Running sharpness (OpenCV), safety, logo, watermark, and label checks (Cloud Vision)...",
         metric: { label: "REJECTED", value: "—" },
         drawer: {
           tabs: ["Overview", "Config", "Output"],
           overview: {
             description:
-              "Fast, cheap rejection filters that run before expensive API calls. Sharpness uses OpenCV Laplacian variance (~5ms, CPU). Safety uses Sonnet 4.6 vision for NSFW detection.",
+              "Fast, cheap rejection filters that run before expensive LLM scoring. Sharpness uses OpenCV Laplacian variance (~5ms, local). Safety, logo, watermark, and label detection use Google Cloud Vision API (~$0.006/clip for 4 features).",
             inputs: [
-              { label: "Sharpness", value: "OpenCV cv2.Laplacian variance" },
-              { label: "Safety", value: "Sonnet 4.6 vision — NSFW pass/fail" },
+              { label: "Sharpness", value: "OpenCV cv2.Laplacian variance (local)" },
+              { label: "Safety", value: "Cloud Vision SafeSearch (NSFW, violence)" },
+              { label: "Logo", value: "Cloud Vision Logo Detection" },
+              { label: "Watermark", value: "Cloud Vision Text Detection (OCR)" },
+              { label: "Labels", value: "Cloud Vision Label Detection" },
             ],
             outputs: [
               { label: "Pass", value: "Clips forwarded to quality scoring" },
-              { label: "Reject", value: "Blurry or unsafe clips discarded" },
+              { label: "Reject", value: "Blurry, unsafe, logo, or watermark clips discarded" },
             ],
           },
           config: [
             { label: "Sharpness Threshold", description: "Minimum Laplacian variance score. Below this = rejected as blurry.", type: "slider", value: "0.1" },
-            { label: "Safety Enabled", description: "Run NSFW safety check via Sonnet 4.6 vision.", type: "toggle", value: "true" },
+            { label: "Safety Gate", description: "Reject clips rated LIKELY or VERY_LIKELY for adult/violence/racy.", type: "toggle", value: "true" },
+            { label: "Logo Gate", description: "Reject clips with detected brand logos.", type: "toggle", value: "true" },
+            { label: "Watermark Gate", description: "Reject clips with large text overlays or watermarks.", type: "toggle", value: "true" },
           ],
         },
       },
@@ -150,7 +155,7 @@ export const PIPELINE_NODES: NodeTemplate[] = [
         tag: "Scorer",
         tagColor: "amber",
         title: "Quality Scoring",
-        subtitle: "Aesthetic + Semantic + Motion",
+        subtitle: "Gemini Flash Vision",
         icon: "sparkles",
         outputLabel: "SCORED",
         outputPreview: "Scoring clips on aesthetic quality, semantic relevance, and motion intensity...",
@@ -159,12 +164,12 @@ export const PIPELINE_NODES: NodeTemplate[] = [
           tabs: ["Overview", "Config", "Output"],
           overview: {
             description:
-              "Runs parallel quality scorers on each clip. Aesthetic and semantic match scored via single Sonnet 4.6 vision call. Motion scored locally via OpenCV Farneback optical flow. Captions generated in the same LLM call.",
+              "Runs quality scorers on each clip via Gemini Flash Vision (Vertex AI). Aesthetic, semantic match, motion intensity, and caption all scored in a single API call per clip.",
             inputs: [
-              { label: "Aesthetic", value: "Sonnet 4.6 vision — visual quality 0–1" },
-              { label: "Semantic", value: "Sonnet 4.6 vision — match to order description 0–1" },
-              { label: "Motion", value: "OpenCV optical flow — movement intensity 0–1" },
-              { label: "Caption", value: "Sonnet 4.6 vision — 2-sentence description" },
+              { label: "Aesthetic", value: "Gemini Flash Vision — visual quality 0–1" },
+              { label: "Semantic", value: "Gemini Flash Vision — match to order description 0–1" },
+              { label: "Motion", value: "Gemini Flash Vision — movement intensity 0–1" },
+              { label: "Caption", value: "Gemini Flash Vision — 2-sentence description" },
             ],
             outputs: [
               { label: "Scores", value: "Per-clip scores for each dimension" },
@@ -238,23 +243,23 @@ export const PIPELINE_NODES: NodeTemplate[] = [
     tag: "Vector Search",
     tagColor: "amber",
     title: "Search & Index",
-    subtitle: "CLIP Embed + FAISS + DuckDB",
+    subtitle: "Vertex AI Embed + FAISS + DuckDB",
     icon: "database",
     outputLabel: "INDEXED",
-    outputPreview: "Generating CLIP embeddings, building FAISS vector index, writing Parquet metadata...",
+    outputPreview: "Generating Vertex AI embeddings, building FAISS vector index, writing Parquet metadata...",
     metric: { label: "INDEXED", value: "—" },
     drawer: {
       tabs: ["Overview", "Config", "Output"],
       overview: {
         description:
-          "Generates CLIP ViT-L/14 embeddings for accepted clips, indexes them in FAISS (HNSW) for semantic search, writes structured metadata to DuckDB/Parquet for range queries, and indexes captions in Elasticsearch for text search.",
+          "Generates multimodal embeddings via Vertex AI ($0.0001/image) for accepted clips, indexes them in FAISS (HNSW) for semantic search, and writes structured metadata to DuckDB/Parquet for range queries.",
         inputs: [
-          { label: "Embedding Model", value: "CLIP ViT-L/14 (768-dim)" },
+          { label: "Embedding Model", value: "Vertex AI Multimodal Embeddings" },
           { label: "Vector Index", value: "FAISS IndexHNSWFlat" },
           { label: "Columnar Store", value: "DuckDB + Parquet" },
         ],
         outputs: [
-          { label: "Embeddings", value: "768-dim vectors per clip" },
+          { label: "Embeddings", value: "1408-dim vectors per clip" },
           { label: "FAISS Index", value: "Searchable ANN index" },
           { label: "Metadata", value: "Scores, captions, attributes" },
         ],

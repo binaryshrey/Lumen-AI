@@ -11,6 +11,10 @@ env/
 .env
 .env.*
 
+# Service account keys
+sa-key.json
+*-sa-key.json
+
 # Test and lint caches
 .pytest_cache/
 .mypy_cache/

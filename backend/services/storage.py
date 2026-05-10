@@ -3,18 +3,26 @@ import time as _time
 from datetime import timedelta
 from pathlib import Path
 
+import os
+
 from google.cloud import storage
-from google.oauth2 import service_account
 
 from config import settings
 
 logger = logging.getLogger(__name__)
 
-# Use service account key for signed URL generation
-_credentials = service_account.Credentials.from_service_account_file(
-    settings.google_application_credentials
-)
-_client = storage.Client(credentials=_credentials, project=settings.gcp_project_id)
+
+def _make_client() -> storage.Client:
+    """Create GCS client — uses SA key file locally, default credentials on Cloud Run."""
+    key_path = settings.google_application_credentials
+    if key_path and os.path.exists(key_path):
+        from google.oauth2 import service_account
+        creds = service_account.Credentials.from_service_account_file(key_path)
+        return storage.Client(credentials=creds, project=settings.gcp_project_id)
+    return storage.Client(project=settings.gcp_project_id)
+
+
+_client = _make_client()
 _bucket = _client.bucket(settings.gcs_bucket)
 
 MAX_RETRIES = 3

@@ -1,9 +1,43 @@
+import logging
+
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
-from db import supabase
+from db import supabase, update_node_state
+from graph.pipeline import pipeline
 from models.schemas import WorkflowCreate, WorkflowResponse
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/workflows", tags=["workflows"])
+
+
+async def run_pipeline(order_id: str, description: str, target_minutes: int):
+    """Run the full LangGraph pipeline in the background."""
+    try:
+        supabase.table("orders").update({"status": "running"}).eq("id", order_id).execute()
+        await update_node_state(order_id, "ml-filters", {"status": "idle"})
+
+        await pipeline.ainvoke({
+            "order_id": order_id,
+            "description": description,
+            "target_minutes": target_minutes,
+            "clips": [],
+            "gated_clips": [],
+            "rejected_count": 0,
+            "scored_clips": [],
+            "accepted_clips": [],
+            "margin_clips": [],
+            "rejected_clips": [],
+            "node_durations": {},
+            "error": None,
+        })
+    except Exception as e:
+        logger.exception(f"Pipeline failed for order {order_id}")
+        supabase.table("orders").update({"status": "error"}).eq("id", order_id).execute()
+        await update_node_state(order_id, "error", {
+            "status": "error",
+            "outputPreview": str(e)[:200],
+        })
 
 
 @router.post("", response_model=WorkflowResponse)
@@ -16,6 +50,13 @@ async def create_workflow(body: WorkflowCreate, background_tasks: BackgroundTask
     }).execute()
 
     order = result.data[0]
+
+    background_tasks.add_task(
+        run_pipeline,
+        order["id"],
+        body.description,
+        body.target_minutes,
+    )
 
     return WorkflowResponse(
         id=order["id"],

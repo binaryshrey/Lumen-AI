@@ -1,12 +1,36 @@
-# Stage 1: Order Parsing
-# TODO: GCP Gemini Flash — parse user description into structured spec
-# - Input: description, target_minutes
-# - Output: {keywords, thresholds, quality_tier, content_filters}
-# - Use: google.cloud.aiplatform (Vertex AI Gemini Flash)
-# - Update orders.node_states via update_node_state()
+import time
 
+from db import update_node_state, supabase
 from models.state import PipelineState
+from services.llm import parse_order
 
 
 async def order_parsing_node(state: PipelineState) -> dict:
-    return {}
+    start = time.time()
+    order_id = state["order_id"]
+
+    await update_node_state(order_id, "order-parsing", {
+        "status": "running",
+        "outputPreview": "Parsing prompt with Gemini Flash...",
+    })
+
+    parsed = await parse_order(state["description"], state["target_minutes"])
+
+    # Save parsed query to orders table
+    supabase.table("orders").update({
+        "parsed_query": parsed,
+    }).eq("id", order_id).execute()
+
+    duration = round(time.time() - start, 1)
+
+    await update_node_state(order_id, "order-parsing", {
+        "status": "completed",
+        "duration": duration,
+        "outputPreview": f'Parsed {len(parsed["keywords"])} keywords: {parsed["keywords"]}. Tier: {parsed["quality_tier"]}.',
+        "metric": {"label": "KEYWORDS", "value": str(len(parsed["keywords"]))},
+    })
+
+    return {
+        "parsed_query": parsed,
+        "node_durations": {**state.get("node_durations", {}), "order-parsing": duration},
+    }

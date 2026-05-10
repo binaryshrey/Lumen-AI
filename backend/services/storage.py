@@ -1,24 +1,41 @@
 import logging
+import time as _time
 from datetime import timedelta
 from pathlib import Path
 
 from google.cloud import storage
+from google.oauth2 import service_account
 
 from config import settings
 
 logger = logging.getLogger(__name__)
 
-_client = storage.Client()
+# Use service account key for signed URL generation
+_credentials = service_account.Credentials.from_service_account_file(
+    settings.google_application_credentials
+)
+_client = storage.Client(credentials=_credentials, project=settings.gcp_project_id)
 _bucket = _client.bucket(settings.gcs_bucket)
+
+MAX_RETRIES = 3
 
 
 def upload_file(local_path: Path, gcs_path: str) -> str:
-    """Upload a local file to GCS. Returns gs:// URI."""
+    """Upload a local file to GCS with retry. Returns gs:// URI."""
     blob = _bucket.blob(gcs_path)
-    blob.upload_from_filename(str(local_path))
-    uri = f"gs://{settings.gcs_bucket}/{gcs_path}"
-    logger.info(f"Uploaded {local_path.name} → {uri}")
-    return uri
+    for attempt in range(MAX_RETRIES):
+        try:
+            blob.upload_from_filename(str(local_path))
+            uri = f"gs://{settings.gcs_bucket}/{gcs_path}"
+            logger.info(f"Uploaded {local_path.name} → {uri}")
+            return uri
+        except Exception as e:
+            if attempt < MAX_RETRIES - 1:
+                wait = 2 ** attempt
+                logger.warning(f"GCS upload retry {attempt + 1}/{MAX_RETRIES} for {gcs_path}: {e}")
+                _time.sleep(wait)
+            else:
+                raise
 
 
 def upload_bytes(data: bytes, gcs_path: str, content_type: str = "application/json") -> str:

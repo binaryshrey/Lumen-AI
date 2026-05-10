@@ -8,9 +8,12 @@
 ![Cloud Run](https://img.shields.io/badge/Cloud_Run-Deployed-4285F4?logo=googlecloud&logoColor=white)
 ![Vercel](https://img.shields.io/badge/Vercel-Deployed-black?logo=vercel)
 
-**A video data pipeline that fetches, filters, scores, indexes, and curates video datasets — clip by clip.**
+**A video data pipeline that fetches, filters, scores, indexes, and curates video datasets : clip by clip.**
 
 LumenAI is an end-to-end AI-powered video curation platform. Users describe the dataset they need in natural language, and the system autonomously fetches videos, runs multi-stage quality filters using Google Cloud AI services, builds searchable vector indexes, and delivers a packaged dataset with scored clips and generated captions.
+![one](https://raw.githubusercontent.com/binaryshrey/Lumen-AI/refs/heads/main/assets/one.png)
+![two](https://raw.githubusercontent.com/binaryshrey/Lumen-AI/refs/heads/main/assets/two.png)
+![three](https://raw.githubusercontent.com/binaryshrey/Lumen-AI/refs/heads/main/assets/three.png)
 
 ---
 

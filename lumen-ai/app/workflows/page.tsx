@@ -28,7 +28,6 @@ import {
   type Workflow,
 } from "@/lib/workflow-types"
 import { createWorkflow, getWorkflow } from "@/lib/api"
-import { supabase } from "@/lib/supabase"
 
 // ── Transform backend order → frontend Workflow ─────────────────────────────
 
@@ -55,17 +54,12 @@ function applyNodeState(
 
 function orderToWorkflow(order: Record<string, unknown>): Workflow {
   const nodeStates = (order.node_states as Record<string, Record<string, unknown>>) || {}
-
   const nodes = PIPELINE_NODES.map((t) => applyNodeState(t, nodeStates))
 
   let currentNodeIndex = -1
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i]
-    if (n.status === "running") {
-      currentNodeIndex = i
-      break
-    }
-    if (n.children?.some((c) => c.status === "running")) {
+    if (n.status === "running" || n.children?.some((c) => c.status === "running")) {
       currentNodeIndex = i
       break
     }
@@ -90,70 +84,29 @@ export default function Page() {
   const [duration, setDuration] = useState("")
   const [workflow, setWorkflow] = useState<Workflow | null>(null)
   const [loading, setLoading] = useState(false)
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const workflowIdRef = useRef<string | null>(null)
 
-  // Subscribe to Supabase Realtime + polling fallback
-  const subscribe = useCallback((orderId: string) => {
-    workflowIdRef.current = orderId
-
-    // Update URL
+  const startPolling = useCallback((orderId: string) => {
     window.history.replaceState(null, "", `/workflows/${orderId}`)
 
-    // Clean up previous subscription
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current)
-    }
-    if (pollRef.current) {
-      clearInterval(pollRef.current)
-    }
+    if (pollRef.current) clearInterval(pollRef.current)
 
-    // Realtime subscription
-    const channel = supabase
-      .channel(`order-${orderId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "orders",
-          filter: `id=eq.${orderId}`,
-        },
-        (payload) => {
-          const order = payload.new
-          setWorkflow(orderToWorkflow(order))
-        },
-      )
-      .subscribe()
-
-    channelRef.current = channel
-
-    // Polling fallback (every 3s) in case Realtime is slow
     pollRef.current = setInterval(async () => {
       try {
         const order = await getWorkflow(orderId)
         setWorkflow(orderToWorkflow(order))
-
-        // Stop polling when completed or errored
         if (order.status === "completed" || order.status === "error") {
           if (pollRef.current) clearInterval(pollRef.current)
         }
       } catch {
-        // ignore poll errors
+        // ignore
       }
-    }, 3000)
+    }, 2000)
   }, [])
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current)
-      }
-      if (pollRef.current) {
-        clearInterval(pollRef.current)
-      }
+      if (pollRef.current) clearInterval(pollRef.current)
     }
   }, [])
 
@@ -161,9 +114,8 @@ export default function Page() {
     setLoading(true)
     try {
       const order = await createWorkflow(description, parseInt(duration))
-      const wf = orderToWorkflow(order)
-      setWorkflow(wf)
-      subscribe(order.id)
+      setWorkflow(orderToWorkflow(order))
+      startPolling(order.id)
       setOpen(false)
       setDescription("")
       setDuration("")

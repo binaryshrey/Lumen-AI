@@ -13,7 +13,6 @@ import {
   type Workflow,
 } from "@/lib/workflow-types"
 import { getWorkflow } from "@/lib/api"
-import { supabase } from "@/lib/supabase"
 
 // ── Transform backend order → frontend Workflow ─────────────────────────────
 
@@ -67,27 +66,10 @@ function orderToWorkflow(order: Record<string, unknown>): Workflow {
 export default function Page() {
   const { id } = useParams<{ id: string }>()
   const [workflow, setWorkflow] = useState<Workflow | null>(null)
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const subscribe = useCallback((orderId: string) => {
-    const channel = supabase
-      .channel(`order-${orderId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "orders",
-          filter: `id=eq.${orderId}`,
-        },
-        (payload) => {
-          setWorkflow(orderToWorkflow(payload.new))
-        },
-      )
-      .subscribe()
-
-    channelRef.current = channel
+  const startPolling = useCallback((orderId: string) => {
+    if (pollRef.current) clearInterval(pollRef.current)
 
     pollRef.current = setInterval(async () => {
       try {
@@ -99,25 +81,25 @@ export default function Page() {
       } catch {
         // ignore
       }
-    }, 3000)
+    }, 2000)
   }, [])
 
   useEffect(() => {
     if (!id) return
 
-    // Initial fetch
-    getWorkflow(id).then((order) => {
-      setWorkflow(orderToWorkflow(order))
-      if (order.status !== "completed" && order.status !== "error") {
-        subscribe(id)
-      }
-    })
+    getWorkflow(id)
+      .then((order) => {
+        setWorkflow(orderToWorkflow(order))
+        if (order.status !== "completed" && order.status !== "error") {
+          startPolling(id)
+        }
+      })
+      .catch(console.error)
 
     return () => {
-      if (channelRef.current) supabase.removeChannel(channelRef.current)
       if (pollRef.current) clearInterval(pollRef.current)
     }
-  }, [id, subscribe])
+  }, [id, startPolling])
 
   return (
     <PageShell
@@ -127,7 +109,7 @@ export default function Page() {
           variant="ghost"
           size="sm"
           className="gap-2"
-          onClick={() => window.location.href = "/workflows"}
+          onClick={() => (window.location.href = "/workflows")}
         >
           <Plus className="size-4" />
           New Workflow

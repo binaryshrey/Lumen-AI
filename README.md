@@ -26,7 +26,7 @@ LumenAI is an end-to-end AI-powered video curation platform. Users describe the 
 5. **Hard gates reject bad clips** — Cloud Vision detects logos/watermarks, Video Intelligence flags NSFW content, Gemini Flash scores sharpness
 6. **Quality scoring ranks the rest** — Gemini Flash Vision scores aesthetic quality, semantic relevance, motion intensity, and generates captions
 7. **Decision split routes clips** — Weighted formula (0.35 aesthetic + 0.30 semantic + 0.20 sharpness + 0.15 motion) routes to accept / margin / reject
-8. **Accepted clips are indexed** — Vertex AI Multimodal Embeddings + FAISS vector index + DuckDB metadata
+8. **Accepted clips are indexed** — Vertex AI Multimodal Embeddings + FAISS vector index
 9. **Dataset is packaged** — Manifest with scores, captions, signed download URLs, exported as a zip
 
 ---
@@ -154,7 +154,6 @@ The pipeline is orchestrated by **LangGraph** as a sequential state graph with 7
 | ------------------- | --------------------------------------------------- |
 | Supabase (Postgres) | Orders, clips, filter scores, QA labels, embeddings |
 | FAISS               | HNSW vector index for semantic search               |
-| DuckDB              | Metadata queries, Parquet export                    |
 
 ### Infrastructure
 
@@ -246,7 +245,7 @@ backend/                           # Backend (FastAPI + LangGraph)
       hard_gates.py               # Stage 3a: Cloud Vision + Video Intel.
       quality_scoring.py          # Stage 3b: Gemini Flash Vision
       decision_split.py           # Stage 3c: Weighted formula
-      search_index.py             # Stage 4: Embeddings + FAISS + DuckDB
+      search_index.py             # Stage 4: Embeddings + FAISS
       deliver.py                  # Stage 5: Manifest + zip export
   services/
     llm.py                       # Gemini Flash client

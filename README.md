@@ -37,6 +37,8 @@ The pipeline is orchestrated by **LangGraph** as a sequential state graph with 7
 
 ### Stage 1: Order Parsing
 
+![stage1](https://raw.githubusercontent.com/binaryshrey/Lumen-AI/refs/heads/main/assets/stage1.png)
+
 |                  |                                                                                                                                                                                       |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Service**      | Gemini 2.5 Flash (Vertex AI)                                                                                                                                                          |
@@ -46,6 +48,8 @@ The pipeline is orchestrated by **LangGraph** as a sequential state graph with 7
 
 ### Stage 2: Ingest
 
+![stage2](https://raw.githubusercontent.com/binaryshrey/Lumen-AI/refs/heads/main/assets/stage2.png)
+
 |                  |                                                                                                                             |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | **Service**      | Pexels API + FFmpeg + GCS                                                                                                   |
@@ -54,6 +58,8 @@ The pipeline is orchestrated by **LangGraph** as a sequential state graph with 7
 | **What it does** | Searches Pexels by keyword, downloads clips, extracts frames at 1fps via FFmpeg, uploads everything to Google Cloud Storage |
 
 ### Stage 3a: Hard Gates
+
+![stage3](https://raw.githubusercontent.com/binaryshrey/Lumen-AI/refs/heads/main/assets/stage3.png)
 
 |             |                                                                                                                                                                          |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -83,6 +89,8 @@ The pipeline is orchestrated by **LangGraph** as a sequential state graph with 7
 
 ### Stage 4: Search & Index
 
+![stage4](https://raw.githubusercontent.com/binaryshrey/Lumen-AI/refs/heads/main/assets/stage4.png)
+
 |                  |                                                                                                                              |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | **Service**      | Vertex AI Multimodal Embeddings + FAISS + DuckDB                                                                             |
@@ -91,6 +99,8 @@ The pipeline is orchestrated by **LangGraph** as a sequential state graph with 7
 | **What it does** | Generates 1408-dim embeddings via Vertex AI, builds HNSW index (M=32, ef_search=200), exports metadata to Parquet via DuckDB |
 
 ### Stage 5: Deliver
+
+![stage5](https://raw.githubusercontent.com/binaryshrey/Lumen-AI/refs/heads/main/assets/stage5.png)
 
 |                  |                                                                                                             |
 | ---------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -115,6 +125,8 @@ The pipeline is orchestrated by **LangGraph** as a sequential state graph with 7
 
 ### Backend
 
+![api docs](https://raw.githubusercontent.com/binaryshrey/Lumen-AI/refs/heads/main/assets/api_docs.png)
+
 | Technology  | Purpose                                      |
 | ----------- | -------------------------------------------- |
 | FastAPI     | REST API, async background tasks             |
@@ -122,6 +134,8 @@ The pipeline is orchestrated by **LangGraph** as a sequential state graph with 7
 | Python 3.12 | Runtime                                      |
 
 ### Google Cloud Platform
+
+![GC RUN](https://raw.githubusercontent.com/binaryshrey/Lumen-AI/refs/heads/main/assets/gcrun.png)
 
 | Service              | Used in         | Purpose                                                          |
 | -------------------- | --------------- | ---------------------------------------------------------------- |
@@ -133,6 +147,8 @@ The pipeline is orchestrated by **LangGraph** as a sequential state graph with 7
 | Cloud Run            | Hosting         | Backend deployment, scales to zero                               |
 
 ### Database & Storage
+
+![DB](https://raw.githubusercontent.com/binaryshrey/Lumen-AI/refs/heads/main/assets/db.png)
 
 | Technology          | Purpose                                             |
 | ------------------- | --------------------------------------------------- |

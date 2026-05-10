@@ -72,6 +72,7 @@ async def deliver_node(state: PipelineState) -> dict:
         "duration": duration,
         "outputPreview": f"Packaged {len(clip_entries)} clips ({total_minutes} min). Manifest ready.",
         "metric": {"label": "DURATION", "value": f"{total_minutes} min"},
+        "manifest_gcs_path": gcs_manifest,
     })
 
     return {

@@ -21,3 +21,7 @@ export async function getWorkflow(id: string) {
   if (!res.ok) throw new Error(`Failed to get workflow: ${res.status}`)
   return res.json()
 }
+
+export function getExportUrl(id: string): string {
+  return `${API_BASE}/workflows/${id}/export`
+}

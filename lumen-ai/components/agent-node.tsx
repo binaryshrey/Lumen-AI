@@ -72,7 +72,7 @@ function NodeCard({
       onClick={onClick}
       data-drag-ignore="true"
       className={cn(
-        "group relative flex w-[400px] flex-col rounded-2xl border bg-[#1A1A1A] p-0 text-left transition-all duration-200 hover:border-white/20 hover:shadow-[0_8px_32px_rgba(0,0,0,0.4)]",
+        "group relative flex w-[400px] flex-col rounded-2xl border bg-[#141414] p-0 text-left transition-all duration-200 hover:border-white/20 hover:shadow-[0_8px_32px_rgba(0,0,0,0.4)]",
         isActive
           ? "border-white/25 shadow-[0_8px_32px_rgba(0,0,0,0.5)]"
           : "border-white/8",
@@ -193,7 +193,7 @@ export function AgentNode({
     <div className="relative rounded-[32px] border border-dashed border-white/12 bg-white/[0.04] px-6 pb-8 pt-12">
       {/* Group label */}
       <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
-        <span className="inline-flex items-center gap-2 rounded-full border border-amber-500/25 bg-[#1A1A1A] px-4 py-1.5 text-xs font-bold tracking-widest text-amber-400 uppercase">
+        <span className="inline-flex items-center gap-2 rounded-full border border-amber-500/25 bg-[#141414] px-4 py-1.5 text-xs font-bold tracking-widest text-amber-400 uppercase">
           <span
             className={cn(
               "size-2 rounded-full bg-amber-400",

@@ -88,6 +88,69 @@ async def get_workflow(workflow_id: str):
     )
 
 
+@router.get("/{workflow_id}/export")
+async def export_workflow(workflow_id: str):
+    """Download all accepted clips + manifest as a zip file."""
+    import io
+    import json
+    import zipfile
+    from starlette.responses import StreamingResponse
+    from services.storage import download_file, generate_signed_url, file_exists
+
+    result = supabase.table("orders").select("*").eq("id", workflow_id).single().execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    order = result.data
+    if order["status"] != "completed":
+        raise HTTPException(status_code=400, detail="Workflow not completed yet")
+
+    # Get manifest
+    manifest_gcs = f"manifests/{workflow_id}/manifest.json"
+    if not file_exists(manifest_gcs):
+        raise HTTPException(status_code=404, detail="Manifest not found")
+
+    # Get accepted clips from Supabase
+    clips_result = supabase.table("clips").select("*").eq("order_id", workflow_id).execute()
+    clips = clips_result.data or []
+
+    # Build zip in memory
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        # Add manifest
+        from pathlib import Path
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Download and add manifest
+            manifest_local = Path(tmpdir) / "manifest.json"
+            download_file(manifest_gcs, manifest_local)
+            zf.write(manifest_local, "manifest.json")
+
+            # Download and add each clip video
+            for clip in clips:
+                gcs_path = clip.get("path", "")
+                if not gcs_path or not file_exists(gcs_path):
+                    continue
+                pexels_id = clip.get("pexels_id", "unknown")
+                local_path = Path(tmpdir) / f"{pexels_id}.mp4"
+                download_file(gcs_path, local_path)
+                zf.write(local_path, f"clips/{pexels_id}.mp4")
+                # Clean up to save memory
+                local_path.unlink()
+
+    zip_buffer.seek(0)
+    desc = order.get("description", "dataset")[:30].replace(" ", "_")
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="lumenai_{desc}_{workflow_id[:8]}.zip"',
+        },
+    )
+
+
 @router.get("", response_model=list[WorkflowResponse])
 async def list_workflows():
     result = supabase.table("orders").select("*").order("created_at", desc=True).execute()

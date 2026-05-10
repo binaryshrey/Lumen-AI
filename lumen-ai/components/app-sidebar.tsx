@@ -45,7 +45,7 @@ export function AppSidebar({ ...props }: ComponentProps<typeof Sidebar>) {
   const pathname = usePathname();
 
   return (
-    <Sidebar collapsible="icon" className="border-r border-white/8" {...props}>
+    <Sidebar collapsible="icon" variant="floating" className="border-white/8" {...props}>
       <SidebarHeader className="px-2 py-3">
         <SidebarMenu>
           <SidebarMenuItem>
